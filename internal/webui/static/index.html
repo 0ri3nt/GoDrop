@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GoDrop</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --accent: #5b8def;
+    --text: #e6e8ec;
+    --muted: #8b93a3;
+    --good: #3fb950;
+    --bad: #f85149;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
+  .subtitle { color: var(--muted); margin-bottom: 1.5rem; font-size: 0.9rem; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.25rem;
+  }
+  .panel h2 { font-size: 1rem; margin: 0 0 0.75rem 0; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .peer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .peer-row:last-child { border-bottom: none; }
+  .peer-name { font-weight: 600; }
+  .peer-addr { color: var(--muted); font-size: 0.8rem; }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 0.9rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button.danger { background: var(--bad); }
+  input[type=file] { color: var(--muted); }
+  .empty { color: var(--muted); font-style: italic; padding: 0.5rem 0; }
+  .transfer-row, .offer-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .transfer-row:last-child, .offer-row:last-child { border-bottom: none; }
+  .progress-bar-bg { background: var(--border); border-radius: 4px; height: 8px; overflow: hidden; }
+  .progress-bar-fill { background: var(--accent); height: 100%; transition: width 0.15s ease; }
+  .status-done { color: var(--good); }
+  .status-error { color: var(--bad); }
+  .offer-actions { display: flex; gap: 0.5rem; }
+</style>
+</head>
+<body>
+  <h1>GoDrop</h1>
+  <div class="subtitle">Peer-to-peer file sharing on your local network</div>
+
+  <div class="panel">
+    <h2>Devices on this network</h2>
+    <div id="peer-list"><div class="empty">Searching for devices…</div></div>
+  </div>
+
+  <div class="panel" id="offers-panel" style="display:none;">
+    <h2>Incoming requests</h2>
+    <div id="offer-list"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Transfers</h2>
+    <div id="transfer-list"><div class="empty">No transfers yet</div></div>
+  </div>
+
+  <input type="file" id="file-input" style="display:none;">
+
+  <script>
+    const peerListEl = document.getElementById('peer-list');
+    const offersPanelEl = document.getElementById('offers-panel');
+    const offerListEl = document.getElementById('offer-list');
+    const transferListEl = document.getElementById('transfer-list');
+    const fileInput = document.getElementById('file-input');
+
+    let peers = [];
+    let selectedPeerId = null;
+    const transfers = new Map(); // transferId -> row element
+
+    function connectWS() {
+      const ws = new WebSocket(`ws://${location.host}/ws`);
+      ws.onmessage = (evt) => {
+        const msg = JSON.parse(evt.data);
+        if (msg.type === 'peers') renderPeers(msg.data);
+        else if (msg.type === 'incoming_offer') renderOffer(msg.data);
+        else if (msg.type === 'transfer_update') renderTransferUpdate(msg.data);
+      };
+      ws.onclose = () => setTimeout(connectWS, 2000); // auto-reconnect
+    }
+
+    function renderPeers(list) {
+      peers = list;
+      if (list.length === 0) {
+        peerListEl.innerHTML = '<div class="empty">No other GoDrop devices found yet</div>';
+        return;
+      }
+      peerListEl.innerHTML = '';
+      for (const p of list) {
+        const row = document.createElement('div');
+        row.className = 'peer-row';
+        row.innerHTML = `
+          <div>
+            <div class="peer-name">${escapeHtml(p.name)}</div>
+            <div class="peer-addr">${escapeHtml(p.host)}:${p.port}</div>
+          </div>
+          <button data-peer-id="${p.id}">Send file…</button>
+        `;
+        row.querySelector('button').addEventListener('click', () => {
+          selectedPeerId = p.id;
+          fileInput.click();
+        });
+        peerListEl.appendChild(row);
+      }
+    }
+
+    fileInput.addEventListener('change', async () => {
+      if (!selectedPeerId || !fileInput.files.length) return;
+      const file = fileInput.files[0];
+      // Browsers don't expose an absolute filesystem path for security
+      // reasons, so this demo UI expects the backend and browser to be
+      // on the same machine and uses the File System Access API where
+      // available. For a simpler first pass, see the note in README
+      // about a native file-picker helper endpoint.
+      alert('File selected: ' + file.name + '\n\nSee README: wire this to your platform file dialog or the /api/send endpoint with an absolute path.');
+      fileInput.value = '';
+    });
+
+    function renderOffer(offer) {
+      offersPanelEl.style.display = 'block';
+      const row = document.createElement('div');
+      row.className = 'offer-row';
+      row.id = 'offer-' + offer.transferId;
+      row.innerHTML = `
+        <div><strong>${escapeHtml(offer.fileName)}</strong> (${formatBytes(offer.fileSize)}) from ${escapeHtml(offer.fromAddr)}</div>
+        <div class="offer-actions">
+          <button class="accept">Accept</button>
+          <button class="secondary reject">Reject</button>
+        </div>
+      `;
+      row.querySelector('.accept').addEventListener('click', () => respond(offer.transferId, true, row));
+      row.querySelector('.reject').addEventListener('click', () => respond(offer.transferId, false, row));
+      offerListEl.appendChild(row);
+    }
+
+    async function respond(transferId, accept, row) {
+      await fetch('/api/respond', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transferId, accept })
+      });
+      row.remove();
+    }
+
+    function renderTransferUpdate(update) {
+      let row = transfers.get(update.transferId);
+      if (!row) {
+        if (transferListEl.querySelector('.empty')) transferListEl.innerHTML = '';
+        row = document.createElement('div');
+        row.className = 'transfer-row';
+        transferListEl.appendChild(row);
+        transfers.set(update.transferId, row);
+      }
+      if (update.status === 'progress') {
+        const pct = update.total ? Math.round((update.sent / update.total) * 100) : 0;
+        row.innerHTML = `
+          <div>${update.direction === 'send' ? 'Sending' : 'Receiving'} — ${pct}%</div>
+          <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${pct}%"></div></div>
+        `;
+      } else if (update.status === 'done') {
+        row.innerHTML = `<div class="status-done">✓ ${update.direction === 'send' ? 'Sent' : 'Received'} successfully</div>`;
+      } else if (update.status === 'error') {
+        row.innerHTML = `<div class="status-error">✗ Failed: ${escapeHtml(update.error || 'unknown error')}</div>`;
+      }
+    }
+
+    function formatBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+      return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    function escapeHtml(s) {
+      const d = document.createElement('div');
+      d.textContent = s;
+      return d.innerHTML;
+    }
+
+    connectWS();
+    fetch('/api/peers').then(r => r.json()).then(renderPeers);
+  </script>
+</body>
+</html>
