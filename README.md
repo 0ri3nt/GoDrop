@@ -1,49 +1,75 @@
 # GoDrop
 
-A simple LAN P2P file sharing utility written in Go.
-
-## Overview
-GoDrop discovers peers on the local network via UDP broadcast and serves files over HTTP so peers can browse and download files from each other.
-
-## Repository layout
-- index.html — simple upload UI (root server)
-- index2.html — P2P discovery UI (peer server)
-- main.go — single-server uploader/host (root mode)
-- server/main.go — peer-discovery + file host (P2P mode)
-- LICENSE
-- go.mod
+Peer-to-peer LAN file sharing in Go. No accounts, no cloud, no typing
+in IP addresses — GoDrop finds other instances on your network
+automatically and sends files directly between them, encrypted.
 
 ## Features
-- UDP-based LAN peer discovery (port 9999)
-- HTTP file listing and downloads (port 8080)
-- Small web UIs for uploading and browsing peers
-- CORS enabled for browser-to-browser downloads
 
-## Configuration (server/main.go)
-- FilePort: TCP port for HTTP (default 8080)
-- DiscoveryPort: UDP port for discovery (default 9999)
-- SharedFolder: folder served by the peer server (default ./shared)
+- 🔍 **Auto-discovery** — finds other GoDrop instances on your LAN via mDNS (like AirDrop)
+- 🔒 **Encrypted transfers** — every file goes over TLS
+- ✅ **Integrity checked** — SHA-256 verified on arrival, so you know it arrived intact
+- 🌐 **Web UI** — see peers and transfer progress live, right in your browser
 
-## Quick start (Windows)
-1. Single-server uploader (root mode):
-    - Run: go run main.go
-    - Open: http://localhost:8080
+## Getting started
 
-2. Peer-discovery server (P2P mode):
-    - Run: go run ./server
-    - Open: http://localhost:8080
+Requires Go 1.22+.
 
-## Endpoints
-- GET /         — UI (index2.html for peer server)
-- GET /peers    — JSON list of discovered peers
-- GET /files    — JSON list of files in shared folder
-- GET /download/<file> — Serve files from the shared folder
+```bash
+git clone https://github.com/0ri3nt/GoDrop.git
+cd GoDrop
+go mod tidy
+go build -o godrop ./cmd/godrop
+./godrop --name "My Laptop"
+```
 
-## Notes
-- server/main.go ensures ./shared exists.
-- Discovery uses UDP broadcast; allow UDP 9999 and TCP 8080 in your firewall for LAN use.
-- Peers are considered stale after ~10s of silence and are removed from the list.
+Open **http://localhost:7777**. Run it on another device on the same
+wifi and it'll show up automatically within a few seconds.
 
-## Troubleshooting
-- If peers do not appear, check firewall/antivirus and allow UDP broadcasts on your LAN.
-- Inspect server/main.go for discovery and HTTP handler behavior.
+**Flags:**
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--http-port` | `7777` | Web UI port |
+| `--xfer-port` | auto | TLS transfer port |
+| `--name` | hostname | Name shown to other peers |
+| `--download-dir` | `~/Downloads/GoDrop` | Where received files go |
+
+## How it works
+
+```
+Discover peers (mDNS)  →  Connect (TLS)  →  Offer & accept  →  Send file  →  Verify checksum
+```
+
+1. GoDrop announces itself on the network and listens for other
+   instances doing the same — no server required.
+2. To send a file, it opens a direct, encrypted connection to that peer.
+3. The peer sees a preview (filename + size) and can accept or reject.
+4. If accepted, the file streams over, and both sides confirm it
+   arrived byte-for-byte intact via a checksum.
+
+## Heads up: the security trade-off
+
+There's no certificate authority on a home network, so GoDrop trusts
+whichever peer it's talking to rather than verifying identities like a
+website would. That means transfers are private from anyone just
+listening in, but not from someone actively impersonating a peer on
+your network. Fine for your own devices at home — don't run this on
+public wifi.
+
+## Optional: let non-GoDrop devices join
+
+Run with `--allow-guests` (on by default) and GoDrop prints a link
+like `http://192.168.1.42:7777/guest` — open that on any phone or
+laptop's browser, no install needed, to upload/download files through
+the host. You approve or reject everything that comes in.
+
+Turn it off with `--allow-guests=false` if you're on a network you
+don't fully trust.
+
+## Roadmap / known gaps
+
+- No resume for interrupted transfers
+- One file per transfer (no folders/batches yet)
+- Restarting GoDrop briefly shows you as a duplicate peer to others (~45s)
+- The in-browser file picker can't grab a real file path yet — see `internal/relay/` if you want to help finish this
