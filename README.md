@@ -11,7 +11,7 @@ automatically and sends files directly between them, encrypted.
 - ✅ **Integrity checked** — SHA-256 verified on arrival, so you know it arrived intact
 - 🌐 **Web UI** — see peers and transfer progress live, right in your browser
 
-## Getting started
+## Installation
 
 Requires Go 1.22+.
 
@@ -54,18 +54,7 @@ There's no certificate authority on a home network, so GoDrop trusts
 whichever peer it's talking to rather than verifying identities like a
 website would. That means transfers are private from anyone just
 listening in, but not from someone actively impersonating a peer on
-your network. Fine for your own devices at home — don't run this on
-public wifi.
-
-## Optional: let non-GoDrop devices join
-
-Run with `--allow-guests` (on by default) and GoDrop prints a link
-like `http://192.168.1.42:7777/guest` — open that on any phone or
-laptop's browser, no install needed, to upload/download files through
-the host. You approve or reject everything that comes in.
-
-Turn it off with `--allow-guests=false` if you're on a network you
-don't fully trust.
+your network, therefore insecure for public Wi-Fi (no snooping!)
 
 ## Roadmap / known gaps
 
@@ -73,3 +62,4 @@ don't fully trust.
 - One file per transfer (no folders/batches yet)
 - Restarting GoDrop briefly shows you as a duplicate peer to others (~45s)
 - The in-browser file picker can't grab a real file path yet — see `internal/relay/` if you want to help finish this
+- Need to implement Guest Devices (devices with no GoDrop installed) to be able to share / receive files, for a device to act like a server
