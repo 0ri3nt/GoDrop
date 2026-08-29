@@ -1,4 +1,5 @@
 # GoDrop
+![Gopher inside a box, symbolising a package to transfer](https://agnivesh.vercel.app/sources/GoDrop.png "Go(pher)Drop")
 
 Peer-to-peer LAN file sharing in Go. No accounts, no cloud, no typing
 in IP addresses — GoDrop finds other instances on your network
